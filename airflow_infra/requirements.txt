@@ -1,0 +1,8 @@
+pandas
+kafka-python
+requests
+json5
+faker
+torch==1.13.1
+transformers==4.30.2
+urllib3==1.26.6

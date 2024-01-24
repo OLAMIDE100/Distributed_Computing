@@ -1,0 +1,162 @@
+version: '3'
+
+services:
+  zoo-keeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: zoo-keeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_CLIENT_PORT}
+      ZOOKEEPER_SERVER_ID: ${ZOOKEEPER_SERVER_ID}
+      ZOOKEEPER_SERVERS: zoo-keeper:2888:3888
+    networks:
+      - kafka
+    volumes:
+      - zoo_data:/var/lib/zookeeper/data
+      - zoo_log:/var/lib/zookeeper/log
+      - zoo_secret:/etc/zookeeper/secrets
+
+  kafka-broker-1:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: kafka-broker-1
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-broker-1:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zoo-keeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: ${REPLICATION_FACTOR}
+    networks:
+      - kafka
+      - airflow
+    volumes:
+      - kafka_secret:/etc/kafka/secrets
+      - kafka_data:/var/lib/kafka/data
+
+
+  kafka-broker-2:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: kafka-broker-2
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-broker-2:19093,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9093,DOCKER://host.docker.internal:29093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zoo-keeper:2181"
+      KAFKA_BROKER_ID: 2
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: ${KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR}
+    networks:
+      - kafka
+      - airflow
+    volumes:
+      - kafka_secret:/etc/kafka/secrets
+      - kafka_data_1:/var/lib/kafka/data
+
+
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.3.2
+    container_name: kafka-connect
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka-broker-1:19092,kafka-broker-2:19093
+      CONNECT_REST_PORT: ${CONNECT_REST_PORT}
+      CONNECT_GROUP_ID: compose-connect-group
+      CONNECT_CONFIG_STORAGE_TOPIC: compose-connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: compose-connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: compose-connect-status
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_REST_ADVERTISED_HOST_NAME: ${CONNECT_REST_ADVERTISED_HOST_NAME}
+      CONNECT_LOG4J_ROOT_LOGLEVEL: 'INFO'
+      CONNECT_LOG4J_LOGGERS: 'org.apache.kafka.connect.runtime.rest=WARN,org.reflections=ERROR'
+      CONNECT_PLUGIN_PATH: '/usr/share/java,/usr/share/confluent-hub-components'
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: ${REPLICATION_FACTOR}
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: ${REPLICATION_FACTOR}
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: ${REPLICATION_FACTOR}
+    volumes:
+      - kafka_secret:/etc/kafka/secrets
+      - kafka_data:/var/lib/kafka/data
+      - kafka_connect_jar:/etc/kafka-connect/jars
+      - kafka_connect_secret:/etc/kafka-connect/secrets
+    networks:
+      - kafka
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.3.2
+    container_name: schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka-broker-1:19092,kafka-broker-2:19093
+      SCHEMA_REGISTRY_HOST_NAME: ${SCHEMA_REGISTRY_HOST_NAME}
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks:
+      - kafka
+    volumes:
+      - schema_registry_secets:/etc/schema-registry/secrets
+
+  kafka_ui:
+    container_name: kafka_ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8888:8080 # Changed to avoid port clash with akhq
+    depends_on:
+      - kafka-broker-1
+      - kafka-broker-2
+      - schema-registry
+      - kafka-connect
+    environment:
+      KAFKA_CLUSTERS_0_NAME: ${KAFKA_CLUSTERS_0_NAME}
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: PLAINTEXT://kafka-broker-1:19092,PLAINTEXT_HOST://kafka-broker-1:19092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://${SCHEMA_REGISTRY_HOST_NAME}:8081
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://${CONNECT_REST_ADVERTISED_HOST_NAME}:${CONNECT_REST_PORT}
+      DYNAMIC_CONFIG_ENABLED: ${DYNAMIC_CONFIG_ENABLED}
+    networks:
+      - kafka
+
+volumes:
+  postgres-db-volume:
+    name: postgres-db
+  redis-volume:
+     name: redis
+  zoo_data:
+     name: zoo_data
+  zoo_log:
+     name: zoo_log
+  zoo_secret:
+     name: zoo_secret
+
+  kafka_secret:
+     name: kafka_secret
+  kafka_data:
+     name: kafka_data
+  kafka_data_1:
+     name: kafka_data_1
+  kafka_connect_jar:
+     name: kafka_connect_jar
+  kafka_connect_secret:
+     name: kafka_connect_secret
+  schema_registry_secets:
+     name: schema_registry_secets
+
+
+
+
+networks:
+  airflow:
+      external: true
+      name: airflow_network
+  kafka:
+    driver: bridge
+    name: kafka_network

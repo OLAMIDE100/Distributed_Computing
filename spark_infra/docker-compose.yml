@@ -1,0 +1,73 @@
+version: "3.8"
+services:
+
+  spark-master:
+    image: bitnami/spark:3
+    container_name: spark-master
+    ports:
+      - "8077:8080"
+      - "7080:7080"
+    environment:
+      - SPARK_UI_PORT=${SPARK_UI_PORT}
+      - SPARK_MODE=master
+      - SPARK_MASTER_PORT=${SPARK_MASTER_PORT}
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=${SPARK_USER}
+    volumes:
+      - ./data:/opt/bitnami/spark/data
+      - spark_python_packages:/opt/bitnami/python
+      - ./run.sh:/opt/bitnami/scripts/spark/run.sh
+    networks:
+      - kafka
+      - cassandra
+      - spark
+     
+
+  spark-worker:
+    image: bitnami/spark:3
+    container_name: spark-worker
+    ports:
+      - "8085:8085"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7080
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY}
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES}
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_USER=${SPARK_USER}
+    volumes:
+      - ./data:/opt/bitnami/spark/data
+      - spark_python_packages:/opt/bitnami/python
+      - ./run.sh:/opt/bitnami/scripts/spark/run.sh
+    depends_on:
+      spark-master:
+        condition: service_started
+    networks:
+      - kafka
+      - cassandra
+      - spark
+    
+
+
+
+volumes:
+  spark_python_packages:
+     name: spark_python_packages
+
+
+networks:
+  spark:
+    driver: bridge
+    name: spark_network
+  kafka:
+      external: true
+      name: kafka_network
+  cassandra:
+    external: true
+    name: cassandra_network
