@@ -16,7 +16,10 @@ default_args = {
 
 
 
-with DAG('sentence_generator', default_args=default_args, schedule_interval='*/10 * * * *', catchup=False) as dag:
+with DAG('sentence_generator', 
+         default_args=default_args, 
+         schedule_interval='*/10 * * * *', 
+         catchup=False) as dag:
 
     start = DummyOperator(task_id='start')
 
