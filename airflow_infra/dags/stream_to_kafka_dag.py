@@ -11,7 +11,8 @@ default_args = {
     'owner': 'airflow',
     'start_date': start_date,
     'retries': 1,
-    'retry_delay': timedelta(seconds=5)
+    'retry_delay': timedelta(seconds=5),
+    "sla": timedelta(hours=2)
 }
 
 
