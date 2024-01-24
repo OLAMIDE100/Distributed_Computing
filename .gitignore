@@ -1,1 +1,3 @@
-secret.env
+.env
+airflow_infra/plugins/__pycache__
+airflow_infra/plugins/__pycache__
